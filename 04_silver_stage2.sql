@@ -440,7 +440,7 @@ as
 --	=============================================================
 --	STEP 11 - RESUME TASK
 --	=============================================================
-alter task silver_sch.silver_to_star_task resume;
+alter task silver_sch.BRONZE_TO_SILVER_TASK suspend;
 
 show tasks;
 
