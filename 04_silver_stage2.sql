@@ -4,7 +4,7 @@
 --	Purpose	: Silver Stage 2 - Star Schema
 --			DIM_CUSTOMER, DIM_PRODUCT, DIM_SUPPLIER,
 --			FACT_ORDERS, Stream on STG_ORDERS
---			Stored Procedure. Task
+--			Stored Procedure Task
 --	Run as	: SYSADMIN
 --	Note	: Run cach step individually, not all at once
 --	String convention: all string columns stored as UPPERCASE
@@ -56,7 +56,7 @@ create sequence if not exists silver_sch.fact_orders_sk_seq
 --	Purpose : Customer dimension table
 --	Type: Permanent (time travel enabled)
 --	Key: CUSTOMER_SK (surrogate) - CUSTOMER_ID (business)
---	Pattern : MERGE upsert - INSERT new. UPDATE changed
+--	Pattern : MERGE upsert - INSERT new, UPDATE changed
 --	Soft delete: IS_ACTIVE flag - never hard delete
 --	========================================================
 
@@ -117,7 +117,7 @@ create or replace table silver_sch.dim_supplier (
 --	Purpose	: Warehouse dimension table
 --	Type	: Permanent (time travel enabled)
 --	Key		: WAREHOUSE_SK (surrogate) - WAREHOUSE_ID (business)
---	Pattern	: MERGE upsert - INSERT new. UPDATE changed
+--	Pattern	: MERGE upsert - INSERT new, UPDATE changed
 --	Soft delete: IS_ACTIVE flag - never hard delete
 --	Why separate dim: warehouse_id + location reused
 --	across many orders - classic dimension pattern
@@ -173,15 +173,15 @@ create or replace table silver_sch.dim_shipment (
 --	Measures	: QUANTITY, UNIT_PRICE, TOTAL_AMOUNT,
 --				  DELAY_DAYS, INVENTORY_LEVEL
 --	=================================================================
-create or replace table silver_sch. fact_orders (
+create or replace table silver_sch.fact_orders (
 
-	order_sk number default fact_orders_sk_seq. nextval,
+	order_sk number default fact_orders_sk_seq.nextval,
 	order_id string not null,
 
 	customer_sk number not null,
 	product_sk number not null,
 	supplier_sk number not null,
-	warhouse_sk number not null,
+	warehouse_sk number not null,
 	shipment_sk number not null,
 
 	order_date timestamp_ntz not null,
@@ -197,7 +197,7 @@ create or replace table silver_sch. fact_orders (
 	created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
 	updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
 	ingested_at timestamp_ntz
-) comment = 'Fact Table - one row per order. 5 dim FKs & Measures';
+) comment = 'Fact Table - one row per order, 5 dim FKs & Measures';
 
 --	============================================================
 --	STEP 8 - STREAM ON STG_ORDERS
@@ -205,7 +205,7 @@ create or replace table silver_sch. fact_orders (
 --	Type		: Standard stream (no APPEND_ONLY)
 --				  Stage 1 MERGE can insert AND update STG_ORDERS
 --				  so we need full CDC - INSERT + UPDATE
---	Consumed by	: sp_silver_to_star stored procedure
+--	Consumed by	: silver_to_star stored procedure
 --	=============================================================
 
 create or replace stream silver_sch.stg_orders_stream
@@ -216,20 +216,20 @@ create or replace stream silver_sch.stg_orders_stream
 show streams;
 
 --	=============================================================
---	STEP 9 - STORED PROCEDURE: sp_silver_to_star
+--	STEP 9 - STORED PROCEDURE: silver_to_star
 --	Purpose	: Builds star schema from STG_ORDERS
 --			  Runs in strict order - dims first, fact last
---			  1. MERGE DIM_CUSTOMER
---			  2. MERGE - DIM_PRODUCT
---			  3. MERGE - DIM_SUPPLIER
---			  4. MERGE + DIM_WAREHOUSE
---			  5. MERGE DIM_SHIPMENT
---			  6. MERGE FACT_ORDERS (joins all 5 dims for SKs)
+--			  1->MERGE - DIM_CUSTOMER
+--			  2->MERGE - DIM_PRODUCT
+--			  3->MERGE - DIM_SUPPLIER
+--			  4->MERGE - DIM_WAREHOUSE
+--			  5->MERGE DIM_SHIPMENT
+--			  6->MERGE FACT_ORDERS (joins all 5 dims for SKs)
 --	Why order matters:
 --			  FACT_ORDERS needs all 5 dim SKs
 --			  All dims must be populated first
 --	Called by: silver_to_star_task (every 1 minute)
---	Test by	: CALL SILVER_SCH. sp_silver_to_star()
+--	Test by	: CALL SILVER_SCH.silver_to_star()
 --	=============================================================
 create or replace procedure silver_sch.silver_to_star()
 	returns string
@@ -238,23 +238,23 @@ as
 begin
 	-- Part 1 - TEMP TABLE
 	create or replace temporary table silver_sch.tmp_stream_data as
-	select * from silver_sch.raw_orders_stream
+	select * from silver_sch.stg_orders_stream
 	where metadata$action = 'INSERT';
 	
 	-- PArt 2 - Merge into dim_customer ( SCD1 - Upsert)
-	merge into silver_sch. dim_customer as tgt
+	merge into silver_sch.dim_customer as tgt
 	using (
 		select
-			upper (customer_id)			as customer_id,
-			upper (customer_name)		as customer_name,
-			upper (customer_region)		as customer_region,
-			upper (customer_segment)	as customer_segment
+			upper(customer_id)			as customer_id,
+			upper(customer_name)		as customer_name,
+			upper(customer_region)		as customer_region,
+			upper(customer_segment)	as customer_segment
 			from silver_sch.tmp_stream_data
 			qualify row_number() over (partition by upper(customer_id) order by order_date desc) = 1
 		) as src
 		on tgt.customer_id = src.customer_id
 		when matched then update set
-			tgt.customer_name		= src. customer_name,
+			tgt.customer_name		= src.customer_name,
 			tgt.customer_region		= src.customer_region,
 			tgt.customer_segment	= src.customer_segment,
 			tgt.is_active			= true,
@@ -266,19 +266,19 @@ begin
 		);
 		
 		-- Part 3 - Merge into dim_product ( SCD1 - Upsert)
-		merge into silver_sch. dim_product as tgt
+		merge into silver_sch.dim_product as tgt
 		using (
 			select
-				upper (product_id)		as product_id,
-				upper (product_name)	as product_name,
-				upper (category)		as category,
+				upper(product_id)		as product_id,
+				upper(product_name)	as product_name,
+				upper(category)		as category,
 				unit_price
 			from silver_sch.tmp_stream_data
-			qualify row_number() over (partition by upper (product_id) order by order_date desc) = 1
+			qualify row_number() over (partition by upper(product_id) order by order_date desc) = 1
 		) as src
 		on tgt.product_id = src.product_id
 		when matched then update set
-			tgt.product_name	= src. product_name,
+			tgt.product_name	= src.product_name,
 			tgt.category		= src.category,
 			tgt.unit_price		= src.unit_price,
 			tgt.is_active		= true,
@@ -297,9 +297,9 @@ begin
 				upper( supplier_name)		as supplier_name,
 				upper(supplier_country)		as supplier_country,
 				lead_time_days,
-				per formance_score
+				performance_score
 			from silver_sch.tmp_stream_data
-			qualify row_number() over (partition by upper (supplier_id) order by order_date desc) = 1
+			qualify row_number() over (partition by upper(supplier_id) order by order_date desc) = 1
 		) as src
 		on tgt.supplier_id = src.supplier_id
 		when matched then update set
@@ -312,19 +312,19 @@ begin
 		when not matched then insert (
 			supplier_id, supplier_name, supplier_country, lead_time_days, performance_score
 		) values (
-			src. supplier_id, src.supplier_name, src.supplier_country, src. lead_time_days, src.performance_score
+			src.supplier_id, src.supplier_name, src.supplier_country, src.lead_time_days, src.performance_score
 		);		
 		
 		-- Part 5 - Merge into dim_warehouse ( SCD1 - Upsert)
 		merge into silver_sch.dim_warehouse as tgt
 		using (
 			select
-				upper (warehouse_id) as warehouse_id,
-				upper (warehouse_location) as warehouse_location
+				upper(warehouse_id) as warehouse_id,
+				upper(warehouse_location) as warehouse_location
 			from silver_sch.tmp_stream_data
-			qualify row_number() over (partition by upper (warehouse_id) order by order_date desc) = 1
+			qualify row_number() over (partition by upper(warehouse_id) order by order_date desc) = 1
 		) as src
-		on tgt.warehouse_id = src. warehouse_id
+		on tgt.warehouse_id = src.warehouse_id
 		when matched then update set
 			tgt.warehouse_location	= src.warehouse_location,
 			tgt.is_active			= true,
@@ -344,10 +344,10 @@ begin
 				ship_date,
 				estimated_delivery
 			from silver_sch.tmp_stream_data
-			where upper (shipment_id) != 'UNKNOWN'
+			where upper(shipment_id) != 'UNKNOWN'
 			qualify row_number() over (partition by upper(shipment_id) order by order_date desc) = 1
 		) as src
-		on tgt. shipment_id = src. shipment_id
+		on tgt.shipment_id = src.shipment_id
 		when matched then update set
 			tgt.carrier				= src.carrier,
 			tgt.ship_date			= src.ship_date,
@@ -361,7 +361,7 @@ begin
 		);
 		
 		-- Part 7 - Merge into fact Orders
-		merge into silver_sch. fact_orders as tgt
+		merge into silver_sch.fact_orders as tgt
 		using (
 			select
 				upper(s.order_id) as order_id,
@@ -393,7 +393,7 @@ begin
 			tgt.product_sk		= src.product_sk,
 			tgt.supplier_sk		= src.supplier_sk,
 			tgt.warehouse_sk	= src.warehouse_sk,
-			tgt.shipment_sk		= src. shipment_sk,
+			tgt.shipment_sk		= src.shipment_sk,
 			tgt.order_date		= src.order_date,
 			tgt.order_status	= src.order_status,
 			tgt.payment_status	= src.payment_status,
@@ -401,7 +401,7 @@ begin
 			tgt.unit_price		= src.unit_price,
 			tgt.total_amount	= src.total_amount,
 			tgt.delay_days		= src.delay_days,
-			tgt.inventory_level	= src. inventory_level,
+			tgt.inventory_level	= src.inventory_level,
 			tgt.ingested_at		= src.ingested_at,
 			tgt.updated_at		= current_timestamp()
 		when not matched then insert (
@@ -415,33 +415,33 @@ begin
 		);
 		
 		-- cleanup temp table - no longer needed after all MERGEs
-		drop table if exists silver_sch.tmp_stream_data;
+		-- drop table if exists silver_sch.tmp_stream_data;
 
-		return 'sp_silver_to_star completed successfully';
-end
+		return 'silver_to_star completed successfully';
+end;
 
 --	=============================================================
 --	STEP 10 - TASK: silver_to_star_task
---	Purpose		: Orchestrates sp_silver_to_star every 1 minute
+--	Purpose		: Orchestrates silver_to_star every 1 minute
 --	Schedule	: 1 MINUTE
 --	WHEN		: SYSTEM$STREAM_HAS_DATA - no data = no run = no cost
 --	Note		: Tasks created SUSPENDED by default
---				  Run ALTER TASK ... RESUME to activate
+--				  Run ALTER TASK ...RESUME to activate
 --	=============================================================
 create or replace task silver_sch.silver_to_star_task
 	warehouse = slowbridge_pipeline_wh
 	schedule = '1 minute'
 	when system$stream_has_data('silver_sch.stg_orders_stream')
 as
-	call silver_sch.sp_silver_to_star();
-
+	call silver_sch.silver_to_star();
+call silver_sch.silver_to_star();
 --	resume the task (tasks are SUSPENDED by default)
 --	alter task silver_sch.silver_to_star_task resume;
 --	=============================================================
 --	STEP 11 - RESUME TASK
 --	=============================================================
-alter task silver_sch.BRONZE_TO_SILVER_TASK suspend;
-
+alter task silver_sch.BRONZE_TO_SILVER_TASK resume;
+alter task silver_sch.SILVER_TO_STAR_TASK resume;
 show tasks;
 
 --	=============================================================
@@ -454,7 +454,7 @@ select system$stream_has_data('SLOWBRIDGE_DEV_DB.SILVER_SCH.STG_ORDERS_STREAM' )
 -- Check all table counts
 select 'DIM_CUSTOMER', count(*) from silver_sch.dim_customer
 union all
-select 'DIM_PRODUCT', count(*) from silver_sch. dim_product
+select 'DIM_PRODUCT', count(*) from silver_sch.dim_product
 union all
 select 'DIM_SUPPLIER', count(*) from silver_sch.dim_supplier
 union all
@@ -462,7 +462,7 @@ select 'DIM_WAREHOUSE', count(*) from silver_sch.dim_warehouse
 union all
 select 'DIM_SHIPMENT', count(*) from silver_sch.dim_shipment
 union all
-select 'FACT_ORDERS', count(*) from silver_sch. fact_orders;
+select 'FACT_ORDERS', count(*) from silver_sch.fact_orders;
 
 
 select * from silver_sch.dim_customer;

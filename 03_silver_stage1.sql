@@ -366,7 +366,7 @@ as
 --	-------------------------------------------------------------
 
 alter task SILVER_SCH.bronze_to_silver_task resume;
-
+alter task SILVER_SCH.silver_to_star_task resume;
 show tasks;
 
 --	-------------------------------------------------------------

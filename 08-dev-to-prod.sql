@@ -60,23 +60,23 @@ grant ownership on schema slowbridge_prod_db.serving_sch to role sysadmin copy c
 use role sysadmin;
 
 -- Bronze
-select 'DEV' as env, count(*) as raw_orders from flowbridge_dev_db.bronze_sch.raw_orders
+select 'DEV' as env, count(*) as raw_orders from slowbridge_dev_db.bronze_sch.raw_orders
 union all
-select 'PROD' as env, count(*) as raw_orders from flowbridge_prod_db.bronze_sch.raw_orders;
+select 'PROD' as env, count(*) as raw_orders from slowbridge_prod_db.bronze_sch.raw_orders;
 
 -- Silver
-select 'DEV' as env, count(*) as stg_orders from flowbridge_dev_db. silver_sch. stg_orders
+select 'DEV' as env, count(*) as stg_orders from slowbridge_dev_db. silver_sch. stg_orders
 union all
-select 'PROD' as env, count(*) as stg_orders from flowbridge_prod_db.silver_sch. stg_orders;
+select 'PROD' as env, count(*) as stg_orders from slowbridge_prod_db.silver_sch. stg_orders;
 
-select 'DEV' as env, count(*) as fact_orders from flowbridge_dev_db. silver_sch. fact_orders
+select 'DEV' as env, count(*) as fact_orders from slowbridge_dev_db. silver_sch. fact_orders
 union all
-select 'PROD' as env, count(*) as fact_orders from flowbridge_prod_db. silver_sch. fact_orders;
+select 'PROD' as env, count(*) as fact_orders from slowbridge_prod_db. silver_sch. fact_orders;
 
 -- Gold
-select 'DEV' as env, count(*) as agg_base from flowbridge_dev_db. gold_sch. agg_base
+select 'DEV' as env, count(*) as agg_base from slowbridge_dev_db. gold_sch. agg_base
 union all
-select 'PROD' as env, count(*) as agg_base from flowbridge_prod_db.gold_sch.agg_base;
+select 'PROD' as env, count(*) as agg_base from slowbridge_prod_db.gold_sch.agg_base;
 
 --	===============================================================
 --	STEP 3 - RECREATE STORAGE INTEGRATION FOR PROD
@@ -111,14 +111,14 @@ create or replace stage bronze_sch.adls_raw_stage_prod
 -- Truncate all the table from all the schema 
 
 -- Refresh all the dynamic tables 
-alter dynamic table slowbridge_prod_db.
+alter dynamic table slowbridge_prod_db refresh;
 
 --	Verify stage
 list @bronze_sch.adls_raw_stage_prod;
 
 --	Get notification channel for Event Grid
 
---	Azure steps for PROD Snowpipe:
+--	Azure steps for PROD Snowpipe:SLOWBRIDGE_DEV_DB.SILVER_SCH.RAW_ORDERS_STREAMSLOWBRIDGE_DEV_DB.SILVER_SCH.RAW_ORDERS_STREAMSLOWBRIDGE_DEV_DB.SILVER_SCH.RAW_ORDERS_STREAMSLOWBRIDGE_DEV_DB.SILVER_SCH.RAW_ORDERS_STREAM
 --	1. Create PROD container: supply-chain-raw-prod
 --	2. Create new Event Grid subscription pointing to PROD container
 --	3. Use notification_channel from SHOW PIPES above
@@ -131,7 +131,7 @@ create pipe if not exists bronze_sch.supply_chain_pipe_prod
 	integration = slowbridge_azure_notifications_int
 	comment = 'Snowpipe - auto ingest json files from ADLS Gen2'
 as
-	copy into flowbridge_prod_db.bronze_sch.raw_orders (
+	copy into slowbridge_prod_db.bronze_sch.raw_orders (
 		raw_data,
 		file_name,
 		file_row_number
@@ -621,7 +621,7 @@ create or replace task slowbridge_prod_db. silver_sch.silver_to_star_task
 	schedule = '1 minute'
 	when system$stream_has_data('slowbridge_prod_db.silver_sch.stg_orders_stream')
 as
-	call silver_sch.sp_silver_to_star();
+	call silver_sch.silver_to_star();
 	
 --	Verify tasks
 show tasks in database slowbridge_prod_db;

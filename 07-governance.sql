@@ -44,7 +44,7 @@ call system$send_email(
 	'srikanthmath149@gmail.com',
 	'Slowbridge Project - DataToCrunch',
 	'DataToCrunch - Alerts are ready!'
-)
+);
 --	Verify integration created
 show integrations;
 
