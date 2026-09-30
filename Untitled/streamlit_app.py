@@ -85,7 +85,7 @@ with col_filter4:
         extra_regions = st.multiselect("Add more regions", [r for r in all_regions if r != region_mode], key="extra_region")
         selected_regions = [region_mode] + extra_regions
 
-date_column = "ORDER_DATE" if date_type == "Order Date" else "INGESTION_DATE"
+date_column = "ORDER_DATE" if date_type == "Order Date" else "INGESTED_AT"
 
 date_filter = ""
 if start_date and end_date:
