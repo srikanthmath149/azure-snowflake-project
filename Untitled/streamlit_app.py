@@ -7,7 +7,7 @@ import os
 
 session = get_active_session()
 
-database= 'SLOWBRIDGE_PROD_DB'
+database= 'SLOWBRIDGE_DEV_DB'
 
 # Write directly to the app
 st.title(f"SlowBridge Dashboard :balloon:")
@@ -26,33 +26,43 @@ with col_filter2:
     selected_period=st.selectbox("Time Period:" , date_options,index=2)
 
 today = datetime.now().date()
+
 if selected_period == "Today":
     start_date = today
     end_date = today
+
 elif selected_period == "This Week":
-    start_date = timedelta(days=today.weekday())
+    start_date = today - timedelta(days=today.weekday())
     end_date = today
+
 elif selected_period == "Last 7 Days":
-    start_date = timedelta(days=7)
+    start_date = today - timedelta(days=6)
     end_date = today
+
 elif selected_period == "Last 14 Days":
-    start_date = timedelta(days=14)
+    start_date = today - timedelta(days=13)
     end_date = today
+
 elif selected_period == "Last 30 Days":
-    start_date = timedelta(days=30)
+    start_date = today - timedelta(days=29)
     end_date = today
+
 elif selected_period == "Last 90 Days":
-    start_date = timedelta(days=90)
+    start_date = today - timedelta(days=89)
     end_date = today
+
 elif selected_period == "YTD":
-    start_date = today.replace(month=1,day=1)
+    start_date = today.replace(month=1, day=1)
     end_date = today
+
 elif selected_period == "Last Year":
     start_date = today - timedelta(days=365)
     end_date = today
+
 else:
     start_date = None
     end_date = None
+
 
 all_statuses = ["PENDING","PROCESSING","SHIPPED","IN TRANSIT","DELIVERED","CANCELLED"]
 
@@ -98,7 +108,7 @@ st.divider()
 
 @st.cache_data(ttl=60)
 def load_fulfillment (combined_filter):
-    df = session. sql(f"""
+    df = session.sql(f"""
         SELECT
             CUSTOMER_REGION,
             CUSTOMER_SEGMENT,
@@ -139,7 +149,7 @@ def load_suppliers(combined_filter):
 
 @st.cache_data(ttl=60)
 def load_inventory(combined_filter):
-	df = session. sql (f"""
+	df = session.sql(f"""
         SELECT
             WAREHOUSE_ID,
             WAREHOUSE_LOCATION,
@@ -157,7 +167,7 @@ def load_inventory(combined_filter):
 
 @st.cache_data(ttl=60)
 def load_shipments(combined_filter):
-    df = session. sql(f"""
+    df = session.sql(f"""
         SELECT
             CARRIER,
             CUSTOMER_REGION,
@@ -176,7 +186,7 @@ def load_shipments(combined_filter):
 
 @st.cache_data(ttl=60)
 def load_kpis(combined_filter):
-	df = session. sql (f"""
+	df = session.sql(f"""
 		SELECT
 			COUNT(*) AS TOTAL_ORDERS,
 			SUM(TOTAL_AMOUNT) AS TOTAL_REVENUE,
@@ -189,7 +199,7 @@ def load_kpis(combined_filter):
 
 @st.cache_data(ttl=60)
 def load_time_series(combined_filter) :
-	df = session. sql(f"""
+	df = session.sql(f"""
 		SELECT
 			DATE_TRUNC('DAY', ORDER_DATE) AS ORDER_DAY,
 			COUNT(ORDER_ID) AS DAILY_ORDERS,
